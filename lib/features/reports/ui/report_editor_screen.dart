@@ -1,8 +1,9 @@
-import 'dart:io';
+
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
+import 'package:flutter/material.dart';
+import 'dart:io';
 import '../domain/models/nodes.dart';
 import '../domain/models/report_doc.dart';
 import '../providers/report_editor_provider.dart';
@@ -246,7 +247,7 @@ class ReportEditorScreen extends StatelessWidget {
       child: Column(
         children: [
           Material(
-            color: selected ? Colors.teal.withOpacity(0.08) : Colors.transparent,
+            color: selected ? Colors.teal.shade500.withAlpha(20) : Colors.transparent,
             borderRadius: BorderRadius.circular(14),
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
