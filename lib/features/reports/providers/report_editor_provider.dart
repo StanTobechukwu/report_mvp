@@ -5,19 +5,23 @@ import '../../../core/utils/time.dart';
 import '../data/reports_repository.dart';
 import '../domain/models/nodes.dart';
 import '../domain/models/report_doc.dart';
+import '../data/templates_repository.dart';
+import '../domain/models/template_doc.dart';
+
 
 class ReportEditorProvider extends ChangeNotifier {
   final ReportsRepository repo;
+  final TemplatesRepository templatesRepo;
 
-  ReportDoc _doc = ReportDoc(
-    reportId: newId('rpt'),
-    createdAtIso: nowIso(),
-    updatedAtIso: nowIso(),
-  );
-
+  late ReportDoc _doc;
   String? _selectedSectionId;
 
-  ReportEditorProvider({required this.repo});
+  ReportEditorProvider({
+    required this.repo,
+    required this.templatesRepo,
+  }) {
+    _doc = _newEmptyDoc();
+  }
 
   ReportDoc get doc => _doc;
   String? get selectedSectionId => _selectedSectionId;
@@ -28,6 +32,25 @@ class ReportEditorProvider extends ChangeNotifier {
   }
 
   void clearSelection() => selectSection(null);
+
+  // ----------- create empty doc -----------
+  ReportDoc _newEmptyDoc() {
+    final now = nowIso();
+    return ReportDoc(
+      reportId: newId('rpt'),
+      createdAtIso: now,
+      updatedAtIso: now,
+      // keep safe defaults in case your ReportDoc expects these
+      roots: const [],
+      images: const [],
+      placementChoice: ImagePlacementChoice.attachmentsOnly,
+      headerTitle: 'Endoscopy Report',
+      footerRoleLabel: 'Endoscopist',
+      recommendation: const RecommendationBlock(text: ''),
+      signature: const SignatureBlock(),
+      showRecommendation: true,
+    );
+  }
 
   // ----------- storage -----------
   Future<void> save() async {
