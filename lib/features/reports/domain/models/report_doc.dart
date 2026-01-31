@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
+
 import 'nodes.dart';
 import 'subject_info_value.dart';
+import 'subject_info_def.dart';
 
 enum ImagePlacementChoice {
   attachmentsOnly,
@@ -16,22 +18,26 @@ class ImageAttachment {
 
 @immutable
 class SignatureBlock {
+  final String roleTitle; // Radiologist / Endoscopist / Reporter etc
   final String name;
   final String credentials;
   final String? signatureFilePath;
 
   const SignatureBlock({
+    this.roleTitle = 'Reporter',
     this.name = '',
     this.credentials = '',
     this.signatureFilePath,
   });
 
   SignatureBlock copyWith({
+    String? roleTitle,
     String? name,
     String? credentials,
     String? signatureFilePath,
   }) {
     return SignatureBlock(
+      roleTitle: roleTitle ?? this.roleTitle,
       name: name ?? this.name,
       credentials: credentials ?? this.credentials,
       signatureFilePath: signatureFilePath ?? this.signatureFilePath,
@@ -50,7 +56,8 @@ class ReportDoc {
   final ImagePlacementChoice placementChoice;
   final SignatureBlock signature;
 
-  /// Subject Info VALUES ONLY (exception: not part of node tree)
+  /// Subject Info schema + values (snapshot stored per report)
+  final SubjectInfoBlockDef subjectInfoDef;
   final SubjectInfoValues subjectInfo;
 
   const ReportDoc({
@@ -61,8 +68,10 @@ class ReportDoc {
     this.images = const [],
     this.placementChoice = ImagePlacementChoice.attachmentsOnly,
     this.signature = const SignatureBlock(),
+    SubjectInfoBlockDef? subjectInfoDef,
     SubjectInfoValues? subjectInfo,
-  }) : subjectInfo = subjectInfo ?? const SubjectInfoValues({});
+  })  : subjectInfoDef = subjectInfoDef ?? SubjectInfoBlockDef.kDefaults,
+        subjectInfo = subjectInfo ?? const SubjectInfoValues({});
 
   int get maxImages =>
       placementChoice == ImagePlacementChoice.inlinePage1 ? 12 : 8;
@@ -74,6 +83,7 @@ class ReportDoc {
     List<ImageAttachment>? images,
     ImagePlacementChoice? placementChoice,
     SignatureBlock? signature,
+    SubjectInfoBlockDef? subjectInfoDef,
     SubjectInfoValues? subjectInfo,
   }) {
     return ReportDoc(
@@ -84,7 +94,9 @@ class ReportDoc {
       images: images ?? this.images,
       placementChoice: placementChoice ?? this.placementChoice,
       signature: signature ?? this.signature,
+      subjectInfoDef: subjectInfoDef ?? this.subjectInfoDef,
       subjectInfo: subjectInfo ?? this.subjectInfo,
     );
   }
 }
+t

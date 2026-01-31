@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/subject_info_provider.dart';
+
+import '../providers/template_editor_provider.dart';
 
 class SubjectInfoTemplateEditor extends StatefulWidget {
   const SubjectInfoTemplateEditor({super.key});
@@ -10,10 +11,15 @@ class SubjectInfoTemplateEditor extends StatefulWidget {
 }
 
 class _SubjectInfoTemplateEditorState extends State<SubjectInfoTemplateEditor> {
-  void _renameDialog(BuildContext context, String fieldId, String currentTitle) {
+  void _renameDialog(
+    BuildContext context,
+    TemplateEditorProvider vm,
+    String fieldId,
+    String currentTitle,
+  ) {
     final c = TextEditingController(text: currentTitle);
 
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Rename field'),
@@ -23,25 +29,27 @@ class _SubjectInfoTemplateEditorState extends State<SubjectInfoTemplateEditor> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          Consumer<SubjectInfoProvider>(
-            builder: (_, p, __) => FilledButton(
-              onPressed: () {
-                p.renameFieldTitle(fieldId, c.text.trim().isEmpty ? currentTitle : c.text.trim());
-                Navigator.pop(context);
-              },
-              child: const Text('Save'),
-            ),
-          )
+          FilledButton(
+            onPressed: () {
+              final next = c.text.trim().isEmpty ? currentTitle : c.text.trim();
+              vm.renameField(fieldId, next);
+              Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
         ],
       ),
-    ).then((_) => c.dispose());
+    ).whenComplete(() => c.dispose());
   }
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<SubjectInfoProvider>(
-      builder: (context, p, _) {
-        final fields = p.fields;
+    return Consumer<TemplateEditorProvider>(
+      builder: (context, vm, _) {
+        final def = vm.subjectInfo;
+
+        final fields = def.fields.toList()
+          ..sort((a, b) => a.order.compareTo(b.order));
 
         return Card(
           child: Padding(
@@ -58,42 +66,37 @@ class _SubjectInfoTemplateEditorState extends State<SubjectInfoTemplateEditor> {
                       ),
                     ),
                     Switch(
-                      value: p.enabled,
-                      onChanged: p.setEnabled,
+                      value: def.enabled,
+                      onChanged: vm.toggleSubjectInfo,
                     ),
                   ],
                 ),
+
+                const SizedBox(height: 8),
+
                 Row(
                   children: [
-                    const Text('Columns:'),
-                    const SizedBox(width: 12),
-                    SegmentedButton<int>(
-                      segments: const [
-                        ButtonSegment(value: 1, label: Text('1')),
-                        ButtonSegment(value: 2, label: Text('2')),
-                      ],
-                      selected: {p.columns},
-                      onSelectionChanged: (s) => p.setColumns(s.first),
-                    ),
                     const Spacer(),
                     OutlinedButton.icon(
-                      onPressed: () => p.addCustomField(),
+                      onPressed: () => vm.addCustomField(),
                       icon: const Icon(Icons.add),
                       label: const Text('Add field'),
                     ),
                   ],
                 ),
+
                 const SizedBox(height: 12),
 
                 ReorderableListView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: fields.length,
-                  onReorder: p.reorderFields,
+                  onReorder: vm.reorderFields,
                   itemBuilder: (_, i) {
                     final f = fields[i];
+
                     return ListTile(
-                      key: ValueKey(f.fieldId),
+                      key: ValueKey(f.key),
                       title: Text(f.title),
                       subtitle: Text(f.isSystem ? 'System field' : 'Custom field'),
                       leading: const Icon(Icons.drag_handle),
@@ -103,18 +106,18 @@ class _SubjectInfoTemplateEditorState extends State<SubjectInfoTemplateEditor> {
                         children: [
                           Checkbox(
                             value: f.required,
-                            onChanged: (v) => p.toggleRequired(f.fieldId, v ?? false),
+                            onChanged: (v) => vm.toggleRequired(f.key, v ?? false),
                           ),
                           IconButton(
                             tooltip: 'Rename',
                             icon: const Icon(Icons.edit),
-                            onPressed: () => _renameDialog(context, f.fieldId, f.title),
+                            onPressed: () => _renameDialog(context, vm, f.key, f.title),
                           ),
                           if (!f.isSystem)
                             IconButton(
                               tooltip: 'Delete',
                               icon: const Icon(Icons.delete_outline),
-                              onPressed: () => p.removeField(f.fieldId),
+                              onPressed: () => vm.removeField(f.key),
                             ),
                         ],
                       ),

@@ -14,6 +14,11 @@ class SubjectInfoValues {
 
   String valueOf(String key) => values[key] ?? '';
 
+  // ✅ Compatibility helpers (fix your current errors)
+  String? get(String key) => values[key];
+  String of(String key) => valueOf(key);
+  String operator [](String key) => valueOf(key);
+
   Map<String, dynamic> toJson() => values;
 
   factory SubjectInfoValues.fromJson(Map<String, dynamic>? j) {

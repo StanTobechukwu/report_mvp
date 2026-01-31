@@ -2,7 +2,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../domain/models/template_doc.dart';
-import '../domain/models/subject_info_def.dart'; // <-- fix the import path/name
+import '../domain/models/subject_info_def.dart';
 
 class TemplateEditorProvider extends ChangeNotifier {
   TemplateDoc _template;
@@ -19,19 +19,22 @@ class TemplateEditorProvider extends ChangeNotifier {
     );
     notifyListeners();
   }
+  void setSubjectInfoColumns(int columns) {
+  final safe = (columns == 2) ? 2 : 1;
+  _template = _template.copyWith(
+    subjectInfo: subjectInfo.copyWith(columns: safe),
+  );
+  notifyListeners();
+}
 
-  //void setSubjectInfoColumns(int columns) {
-   // final safe = (columns == 2) ? 2 : 1;
-   // _template = _template.copyWith(
-   //   subjectInfo: subjectInfo.copyWith(columns: safe),
-  //  );
-  //  notifyListeners();
-//  }
 
   // ---------- field edits ----------
   void renameField(String fieldId, String title) {
+    final t = title.trim();
+    if (t.isEmpty) return;
+
     final updated = subjectInfo.fields
-        .map((f) => f.key == fieldId ? f.copyWith(title: title) : f)
+        .map((f) => f.key == fieldId ? f.copyWith(title: t) : f)
         .toList();
 
     _updateFields(updated);
@@ -67,10 +70,12 @@ class TemplateEditorProvider extends ChangeNotifier {
     _updateFields(subjectInfo.fields.where((f) => f.key != fieldId).toList());
   }
 
-  /// Optional: reorder fields for template UI (ReorderableListView)
+  /// Reorder fields in the template UI (ReorderableListView)
   void reorderFields(int oldIndex, int newIndex) {
-    final list = subjectInfo.fields.toList()
-      ..sort((a, b) => a.order.compareTo(b.order));
+    final list = [...subjectInfo.fields]..sort((a, b) => a.order.compareTo(b.order));
+
+    if (oldIndex < 0 || oldIndex >= list.length) return;
+    if (newIndex < 0 || newIndex > list.length) return;
     if (newIndex > oldIndex) newIndex -= 1;
 
     final item = list.removeAt(oldIndex);
@@ -99,11 +104,8 @@ class TemplateEditorProvider extends ChangeNotifier {
   }
 
   String _generateCustomFieldId() {
-    // Migration-safe: never based on title
-    // Enough randomness to avoid collision in practice
     final r = Random();
-    final chunk =
-        List.generate(8, (_) => r.nextInt(36).toRadixString(36)).join();
+    final chunk = List.generate(8, (_) => r.nextInt(36).toRadixString(36)).join();
     return 'custom_$chunk';
   }
 }

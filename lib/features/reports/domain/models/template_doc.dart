@@ -10,7 +10,7 @@ class TemplateDoc {
   final List<SectionNode> roots;
   final SubjectInfoBlockDef subjectInfo;
 
-  const TemplateDoc({
+  TemplateDoc({
     required this.templateId,
     required this.updatedAt,
     required this.name,

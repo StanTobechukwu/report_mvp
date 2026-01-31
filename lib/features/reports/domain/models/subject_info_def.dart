@@ -22,6 +22,9 @@ class SubjectFieldDef {
     required this.isSystem,
   });
 
+  // Compatibility with older code that used fieldId
+  String get fieldId => key;
+
   SubjectFieldDef copyWith({
     String? title,
     bool? required,
@@ -47,7 +50,7 @@ class SubjectFieldDef {
   factory SubjectFieldDef.fromJson(Map<String, dynamic> j) {
     return SubjectFieldDef(
       key: j['key'] as String,
-      title: j['title'] as String,
+      title: (j['title'] as String?) ?? '',
       required: (j['required'] as bool?) ?? false,
       order: (j['order'] as int?) ?? 0,
       isSystem: (j['isSystem'] as bool?) ?? false,
@@ -59,11 +62,16 @@ class SubjectFieldDef {
 class SubjectInfoBlockDef {
   final bool enabled;
   final int schemaVersion;
+
+  /// ✅ NEW: persist the column layout (1 or 2)
+  final int columns;
+
   final List<SubjectFieldDef> fields;
 
   const SubjectInfoBlockDef({
     required this.enabled,
     required this.schemaVersion,
+    required this.columns,
     required this.fields,
   });
 
@@ -71,6 +79,7 @@ class SubjectInfoBlockDef {
     return const SubjectInfoBlockDef(
       enabled: true,
       schemaVersion: 1,
+      columns: 2,
       fields: [
         SubjectFieldDef(
           key: SubjectFieldKeys.subjectName,
@@ -90,13 +99,20 @@ class SubjectInfoBlockDef {
     );
   }
 
+  List<SubjectFieldDef> get orderedFields {
+    final list = fields.toList()..sort((a, b) => a.order.compareTo(b.order));
+    return list;
+  }
+
   SubjectInfoBlockDef copyWith({
     bool? enabled,
+    int? columns,
     List<SubjectFieldDef>? fields,
   }) {
     return SubjectInfoBlockDef(
       enabled: enabled ?? this.enabled,
       schemaVersion: schemaVersion,
+      columns: columns ?? this.columns,
       fields: fields ?? this.fields,
     );
   }
@@ -104,6 +120,7 @@ class SubjectInfoBlockDef {
   Map<String, dynamic> toJson() => {
         'enabled': enabled,
         'schemaVersion': schemaVersion,
+        'columns': columns,
         'fields': fields.map((f) => f.toJson()).toList(),
       };
 
@@ -113,6 +130,7 @@ class SubjectInfoBlockDef {
     return SubjectInfoBlockDef(
       enabled: (j['enabled'] as bool?) ?? true,
       schemaVersion: (j['schemaVersion'] as int?) ?? 1,
+      columns: ((j['columns'] as int?) ?? 2) == 2 ? 2 : 1,
       fields: ((j['fields'] as List?) ?? const [])
           .map((e) => SubjectFieldDef.fromJson(e as Map<String, dynamic>))
           .toList(),

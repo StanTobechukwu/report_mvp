@@ -259,39 +259,43 @@ class ReportEditorProvider extends ChangeNotifier {
   // Requires: SectionNode.indent, ContentNode.indent in nodes.dart
   // =========================
 
-  void indentNode(String nodeId) => _shiftIndent(nodeId, +1);
-  void outdentNode(String nodeId) => _shiftIndent(nodeId, -1);
+ // =========================
+// Indent / Outdent nodes
+// =========================
 
-  void _shiftIndent(String nodeId, int delta) {
-    int clampIndent(int v) => v.clamp(0, 20);
+void indentNode(String nodeId) => _shiftIndent(nodeId, 1);
+void outdentNode(String nodeId) => _shiftIndent(nodeId, -1);
 
-    Node transform(Node n) {
-      if (n.id == nodeId) {
-        if (n is SectionNode) {
-          return n.copyWith(indent: clampIndent(n.indent + delta));
-        }
-        if (n is ContentNode) {
-          return n.copyWith(indent: clampIndent(n.indent + delta));
-        }
-      }
+void _shiftIndent(String nodeId, int delta) {
+  int clampIndent(int v) => v.clamp(0, 20);
 
+  Node transform(Node n) {
+    if (n.id == nodeId) {
       if (n is SectionNode) {
-        final updatedChildren = n.children.map(transform).toList();
-        return n.copyWith(children: updatedChildren);
+        return n.copyWith(indent: clampIndent(n.indent + delta));
       }
-
-      return n;
+      if (n is ContentNode) {
+        return n.copyWith(indent: clampIndent(n.indent + delta));
+      }
     }
 
-    final updatedRoots =
-        _doc.roots.map((s) => transform(s) as SectionNode).toList();
+    if (n is SectionNode) {
+      final updatedChildren = n.children.map(transform).toList();
+      return n.copyWith(children: updatedChildren);
+    }
 
-    _doc = _doc.copyWith(
-      roots: updatedRoots,
-      updatedAtIso: nowIso(),
-    );
-    notifyListeners();
+    return n;
   }
+
+  final updatedRoots =
+      _doc.roots.map((s) => transform(s) as SectionNode).toList();
+
+  _doc = _doc.copyWith(
+    roots: updatedRoots,
+    updatedAtIso: nowIso(),
+  );
+  notifyListeners();
+}
 
   // =========================
   // Images

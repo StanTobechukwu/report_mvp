@@ -1,23 +1,24 @@
 import '../models/nodes.dart';
 import '../models/report_doc.dart';
+import '../models/subject_info_def.dart';
 import '../models/subject_info_value.dart';
 
 class ReportCodec {
-  /* =======================
-     ReportDoc
-     ======================= */
+  // =========================
+  // ReportDoc
+  // =========================
 
   static Map<String, dynamic> reportToJson(ReportDoc doc) => {
         'reportId': doc.reportId,
         'createdAtIso': doc.createdAtIso,
         'updatedAtIso': doc.updatedAtIso,
 
-        // ---------- Subject Info (VALUES ONLY) ----------
+        // ✅ subject info schema + values
+        'subjectInfoDef': doc.subjectInfoDef.toJson(),
         'subjectInfo': doc.subjectInfo.toJson(),
 
-        // ---------- Layout / content ----------
+        // content
         'placementChoice': doc.placementChoice.name,
-
         'roots': doc.roots.map(sectionToJson).toList(),
 
         'images': doc.images
@@ -27,76 +28,96 @@ class ReportCodec {
                 })
             .toList(),
 
+        // ✅ signature block with roleTitle
         'signature': {
+          'roleTitle': doc.signature.roleTitle,
           'name': doc.signature.name,
           'credentials': doc.signature.credentials,
           'signatureFilePath': doc.signature.signatureFilePath,
         },
-
-        // NOTE:
-        // - recommendation intentionally NOT written
-        // - labels/layout intentionally NOT written
       };
 
   static ReportDoc reportFromJson(Map<String, dynamic> j) {
-    // ---------- migration-safe timestamps ----------
-    final createdAtIso =
-        (j['createdAtIso'] as String?) ??
+    final createdAtIso = (j['createdAtIso'] as String?) ??
         (j['updatedAtIso'] as String?) ??
         DateTime.now().toIso8601String();
 
-    final updatedAtIso =
-        (j['updatedAtIso'] as String?) ??
+    final updatedAtIso = (j['updatedAtIso'] as String?) ??
         (j['createdAtIso'] as String?) ??
         DateTime.now().toIso8601String();
 
-    // ---------- placement ----------
     final placementName =
-        (j['placementChoice'] as String?) ??
-            ImagePlacementChoice.attachmentsOnly.name;
+        (j['placementChoice'] as String?) ?? ImagePlacementChoice.attachmentsOnly.name;
 
-    // ---------- subject info (values only, optional in old reports) ----------
-    final subjectInfoJson = j['subjectInfo'];
-    final subjectInfo = subjectInfoJson is Map<String, dynamic>
-        ? SubjectInfoValues.fromJson(subjectInfoJson)
+    final placementChoice = _safeEnumByName<ImagePlacementChoice>(
+      ImagePlacementChoice.values,
+      placementName,
+      fallback: ImagePlacementChoice.attachmentsOnly,
+    );
+
+    // ✅ subject info def (schema)
+    final defJson = j['subjectInfoDef'];
+    final subjectInfoDef = defJson is Map
+        ? SubjectInfoBlockDef.fromJson(Map<String, dynamic>.from(defJson as Map))
+        : SubjectInfoBlockDef.defaults();
+
+    // ✅ subject info values
+    final valuesJson = j['subjectInfo'];
+    final subjectInfo = valuesJson is Map
+        ? SubjectInfoValues.fromJson(Map<String, dynamic>.from(valuesJson as Map))
         : const SubjectInfoValues({});
+
+    // ✅ roots
+    final roots = ((j['roots'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => sectionFromJson(Map<String, dynamic>.from(e)))
+        .toList();
+
+    // ✅ images
+    final images = ((j['images'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) {
+          final m = Map<String, dynamic>.from(e);
+          return ImageAttachment(
+            id: (m['id'] as String?) ?? '',
+            filePath: (m['filePath'] as String?) ?? '',
+          );
+        })
+        .where((img) => img.id.isNotEmpty && img.filePath.isNotEmpty)
+        .toList();
+
+    // ✅ signature
+    final sig = (j['signature'] is Map)
+        ? Map<String, dynamic>.from(j['signature'] as Map)
+        : <String, dynamic>{};
+
+    // Migration-safe:
+    // older reports may not have roleTitle yet; default to "Reporter"
+    final signature = SignatureBlock(
+      roleTitle: (sig['roleTitle'] as String?)?.trim().isNotEmpty == true
+          ? sig['roleTitle'] as String
+          : 'Reporter',
+      name: (sig['name'] as String?) ?? '',
+      credentials: (sig['credentials'] as String?) ?? '',
+      signatureFilePath: sig['signatureFilePath'] as String?,
+    );
 
     return ReportDoc(
       reportId: (j['reportId'] as String?) ?? 'unknown',
       createdAtIso: createdAtIso,
       updatedAtIso: updatedAtIso,
-
+      placementChoice: placementChoice,
+      subjectInfoDef: subjectInfoDef,
       subjectInfo: subjectInfo,
-
-      placementChoice:
-          ImagePlacementChoice.values.byName(placementName),
-
-      roots: ((j['roots'] as List?) ?? const [])
-          .map((e) => sectionFromJson(e as Map<String, dynamic>))
-          .toList(),
-
-      images: ((j['images'] as List?) ?? const [])
-          .map((e) => ImageAttachment(
-                id: (e['id'] as String?) ?? '',
-                filePath: (e['filePath'] as String?) ?? '',
-              ))
-          .where((img) =>
-              img.id.isNotEmpty && img.filePath.isNotEmpty)
-          .toList(),
-
-      signature: SignatureBlock(
-        name: ((j['signature'] as Map?)?['name'] as String?) ?? '',
-        credentials:
-            ((j['signature'] as Map?)?['credentials'] as String?) ?? '',
-        signatureFilePath:
-            ((j['signature'] as Map?)?['signatureFilePath'] as String?),
-      ),
+      roots: roots,
+      images: images,
+      signature: signature,
     );
   }
 
-  /* =======================
-     SectionNode
-     ======================= */
+  // =========================
+  // SectionNode
+  // =========================
 
   static Map<String, dynamic> sectionToJson(SectionNode s) => {
         'type': 'section',
@@ -113,19 +134,24 @@ class ReportCodec {
         title: (j['title'] as String?) ?? '',
         collapsed: (j['collapsed'] as bool?) ?? false,
         style: styleFromJson(
-            (j['style'] as Map?)?.cast<String, dynamic>() ?? const {}),
+          (j['style'] is Map)
+              ? Map<String, dynamic>.from(j['style'] as Map)
+              : const <String, dynamic>{},
+        ),
         children: ((j['children'] as List?) ?? const [])
-            .map((e) => nodeFromJson(e as Map<String, dynamic>))
+            .whereType<Map>()
+            .map((e) => nodeFromJson(Map<String, dynamic>.from(e)))
             .toList(),
         indent: (j['indent'] as int?) ?? 0,
       );
 
-  /* =======================
-     Node
-     ======================= */
+  // =========================
+  // Node
+  // =========================
 
   static Map<String, dynamic> nodeToJson(Node n) {
     if (n is SectionNode) return sectionToJson(n);
+
     if (n is ContentNode) {
       return {
         'type': 'content',
@@ -134,12 +160,15 @@ class ReportCodec {
         'indent': n.indent,
       };
     }
-    throw StateError('Unknown node type');
+
+    throw StateError('Unknown node type: ${n.runtimeType}');
   }
 
   static Node nodeFromJson(Map<String, dynamic> j) {
     final type = (j['type'] as String?) ?? '';
+
     if (type == 'section') return sectionFromJson(j);
+
     if (type == 'content') {
       return ContentNode(
         id: (j['id'] as String?) ?? '',
@@ -147,12 +176,13 @@ class ReportCodec {
         indent: (j['indent'] as int?) ?? 0,
       );
     }
+
     throw StateError('Unknown node json type: $type');
   }
 
-  /* =======================
-     TitleStyle
-     ======================= */
+  // =========================
+  // TitleStyle
+  // =========================
 
   static Map<String, dynamic> styleToJson(TitleStyle s) => {
         'level': s.level.name,
@@ -161,15 +191,41 @@ class ReportCodec {
       };
 
   static TitleStyle styleFromJson(Map<String, dynamic> j) {
-    final levelName =
-        (j['level'] as String?) ?? HeadingLevel.h2.name;
-    final alignName =
-        (j['align'] as String?) ?? TitleAlign.left.name;
+    final levelName = (j['level'] as String?) ?? HeadingLevel.h2.name;
+    final alignName = (j['align'] as String?) ?? TitleAlign.left.name;
+
+    final level = _safeEnumByName<HeadingLevel>(
+      HeadingLevel.values,
+      levelName,
+      fallback: HeadingLevel.h2,
+    );
+
+    final align = _safeEnumByName<TitleAlign>(
+      TitleAlign.values,
+      alignName,
+      fallback: TitleAlign.left,
+    );
 
     return TitleStyle(
-      level: HeadingLevel.values.byName(levelName),
+      level: level,
       bold: (j['bold'] as bool?) ?? true,
-      align: TitleAlign.values.byName(alignName),
+      align: align,
     );
+  }
+
+  // =========================
+  // Utils
+  // =========================
+
+  static T _safeEnumByName<T extends Enum>(
+    List<T> values,
+    String name, {
+    required T fallback,
+  }) {
+    try {
+      return values.byName(name);
+    } catch (_) {
+      return fallback;
+    }
   }
 }

@@ -1,22 +1,257 @@
-
-
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter/material.dart';
-import 'dart:io';
+
 import '../domain/models/nodes.dart';
 import '../domain/models/report_doc.dart';
+import '../domain/models/subject_info_def.dart';
 import '../providers/report_editor_provider.dart';
 import '../services/image_services.dart';
 import 'report_preview_screen.dart';
 import '../ui/signature_capture.dart';
 
-class ReportEditorScreen extends StatelessWidget {
+class ReportEditorScreen extends StatefulWidget {
   const ReportEditorScreen({super.key});
+
+  @override
+  State<ReportEditorScreen> createState() => _ReportEditorScreenState();
+}
+
+class _ReportEditorScreenState extends State<ReportEditorScreen> {
+  // Controllers for Subject Info values (keeps typing stable)
+  final Map<String, TextEditingController> _subjectControllers = {};
+  Map<String, String> _subjectErrors = {};
+
+  @override
+  void dispose() {
+    for (final c in _subjectControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  TextEditingController _controllerFor(String key, String initial) {
+    return _subjectControllers.putIfAbsent(
+      key,
+      () => TextEditingController(text: initial),
+    );
+  }
+
+  void _syncSubjectControllers(ReportEditorProvider vm) {
+    final def = vm.subjectInfoDef;
+
+    // Ensure controllers exist for all current fields
+    for (final f in def.fields) {
+      final current = vm.subjectInfoValues.valueOf(f.key);
+      final c = _controllerFor(f.key, current);
+      if (c.text != current) c.text = current;
+    }
+
+    // Dispose controllers that no longer exist (field removed)
+    final keysInDef = def.fields.map((e) => e.key).toSet();
+    final keysToRemove = _subjectControllers.keys.where((k) => !keysInDef.contains(k)).toList();
+    for (final k in keysToRemove) {
+      _subjectControllers[k]?.dispose();
+      _subjectControllers.remove(k);
+      _subjectErrors.remove(k);
+    }
+  }
+
+  Map<String, String> _validateSubjectInfo(ReportEditorProvider vm) {
+    final def = vm.subjectInfoDef;
+
+    final errors = <String, String>{};
+    if (!def.enabled) return errors;
+
+    for (final f in def.fields) {
+      if (!f.required) continue;
+      final v = vm.subjectInfoValues.valueOf(f.key).trim();
+      if (v.isEmpty) errors[f.key] = 'Required';
+    }
+    return errors;
+  }
+
+  Future<void> _addSubjectFieldDialog(BuildContext context, ReportEditorProvider vm) async {
+    final titleC = TextEditingController();
+    bool required = false;
+
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Add Subject Field'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleC,
+              decoration: const InputDecoration(
+                labelText: 'Field name (e.g. Address)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            StatefulBuilder(
+              builder: (context, setLocal) => CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: required,
+                onChanged: (v) => setLocal(() => required = v ?? false),
+                title: const Text('Required'),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final title = titleC.text.trim();
+              if (title.isEmpty) return;
+              vm.addSubjectField(title: title, required: required);
+              Navigator.pop(context, true);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+
+    titleC.dispose();
+
+    if (res == true) {
+      // Revalidate if needed
+      if (_subjectErrors.isNotEmpty) {
+        setState(() => _subjectErrors = _validateSubjectInfo(vm));
+      }
+    }
+  }
+
+  void _manageSubjectFieldsSheet(BuildContext context, ReportEditorProvider vm) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Consumer<ReportEditorProvider>(
+              builder: (context, p, __) {
+                final def = p.subjectInfoDef;
+                final fields = [...def.fields]..sort((a, b) => a.order.compareTo(b.order));
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('Manage Subject Fields'),
+                      subtitle: Text('Rename, mark required, or delete custom fields'),
+                    ),
+                    const SizedBox(height: 6),
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: fields.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final f = fields[i];
+                          return ListTile(
+                            title: Text(f.title),
+                            subtitle: Text(f.isSystem ? 'System field' : 'Custom field'),
+                            leading: Icon(f.isSystem ? Icons.lock_outline : Icons.edit_note),
+                            trailing: Wrap(
+                              spacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text('Req'),
+                                    Checkbox(
+                                      value: f.required,
+                                      onChanged: (v) => p.toggleSubjectFieldRequired(f.key, v ?? false),
+                                    ),
+                                  ],
+                                ),
+                                IconButton(
+                                  tooltip: 'Rename',
+                                  icon: const Icon(Icons.edit),
+                                  onPressed: () async {
+                                    final c = TextEditingController(text: f.title);
+                                    final ok = await showDialog<bool>(
+                                      context: context,
+                                      builder: (_) => AlertDialog(
+                                        title: const Text('Rename field'),
+                                        content: TextField(
+                                          controller: c,
+                                          decoration: const InputDecoration(
+                                            border: OutlineInputBorder(),
+                                          ),
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(context, false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          FilledButton(
+                                            onPressed: () {
+                                              final t = c.text.trim();
+                                              if (t.isEmpty) return;
+                                              p.renameSubjectField(f.key, t);
+                                              Navigator.pop(context, true);
+                                            },
+                                            child: const Text('Save'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    c.dispose();
+                                    if (ok == true && _subjectErrors.isNotEmpty) {
+                                      setState(() => _subjectErrors = _validateSubjectInfo(vm));
+                                    }
+                                  },
+                                ),
+                                if (!f.isSystem)
+                                  IconButton(
+                                    tooltip: 'Delete',
+                                    icon: const Icon(Icons.delete_outline),
+                                    onPressed: () => p.removeSubjectField(f.key),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Done'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<ReportEditorProvider>();
+
+    _syncSubjectControllers(vm);
 
     return Scaffold(
       appBar: AppBar(
@@ -26,6 +261,15 @@ class ReportEditorScreen extends StatelessWidget {
             tooltip: 'Save',
             icon: const Icon(Icons.save_outlined),
             onPressed: () async {
+              final errs = _validateSubjectInfo(vm);
+              if (errs.isNotEmpty) {
+                setState(() => _subjectErrors = errs);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please complete required Subject Info fields.')),
+                );
+                return;
+              }
+
               await vm.save();
               if (!context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved')));
@@ -34,7 +278,17 @@ class ReportEditorScreen extends StatelessWidget {
           IconButton(
             tooltip: 'Preview',
             icon: const Icon(Icons.preview_outlined),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ReportPreviewScreen())),
+            onPressed: () {
+              final errs = _validateSubjectInfo(vm);
+              if (errs.isNotEmpty) {
+                setState(() => _subjectErrors = errs);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please complete required Subject Info fields.')),
+                );
+                return;
+              }
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const ReportPreviewScreen()));
+            },
           ),
         ],
       ),
@@ -48,6 +302,9 @@ class ReportEditorScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            _subjectInfoCard(vm),
+            const SizedBox(height: 12),
+
             _card(
               title: 'Outline',
               child: Column(
@@ -62,30 +319,52 @@ class ReportEditorScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
+
             _imagesCard(context, vm),
             const SizedBox(height: 12),
+
             _card(
               title: 'Recommendation',
               child: TextField(
                 minLines: 2,
                 maxLines: 6,
-                decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Enter recommendation…'),
-                onChanged: vm.updateRecommendation,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter recommendation…',
+                ),
+                onChanged: (v) {
+                  // vm.updateRecommendation(v);
+                },
               ),
             ),
             const SizedBox(height: 12),
+
             _card(
-              title: 'Endoscopist',
+              title: 'Signer',
               child: Column(
                 children: [
                   TextField(
-                    decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder()),
-                    onChanged: (v) => vm.updateEndoscopist(name: v),
+                    decoration: const InputDecoration(
+                      labelText: 'Title (e.g. Radiologist / Endoscopist / Reporter)',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => vm.updateSigner(roleTitle: v),
                   ),
                   const SizedBox(height: 10),
                   TextField(
-                    decoration: const InputDecoration(labelText: 'Credentials', border: OutlineInputBorder()),
-                    onChanged: (v) => vm.updateEndoscopist(credentials: v),
+                    decoration: const InputDecoration(
+                      labelText: 'Name',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => vm.updateSigner(name: v),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Credentials',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => vm.updateSigner(credentials: v),
                   ),
                   const SizedBox(height: 10),
                   Row(
@@ -100,7 +379,9 @@ class ReportEditorScreen extends StatelessWidget {
                             if (path != null) vm.setSignatureFilePath(path);
                           },
                           icon: const Icon(Icons.draw_outlined),
-                          label: Text(vm.doc.signature.signatureFilePath == null ? 'Add Signature' : 'Update Signature'),
+                          label: Text(
+                            vm.doc.signature.signatureFilePath == null ? 'Add Signature' : 'Update Signature',
+                          ),
                         ),
                       ),
                     ],
@@ -109,7 +390,11 @@ class ReportEditorScreen extends StatelessWidget {
                     const SizedBox(height: 10),
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.file(File(vm.doc.signature.signatureFilePath!), height: 100, fit: BoxFit.contain),
+                      child: Image.file(
+                        File(vm.doc.signature.signatureFilePath!),
+                        height: 100,
+                        fit: BoxFit.contain,
+                      ),
                     ),
                   ],
                 ],
@@ -121,9 +406,105 @@ class ReportEditorScreen extends StatelessWidget {
     );
   }
 
+  // ---------------- Subject Info UI ----------------
+
+  Widget _subjectInfoCard(ReportEditorProvider vm) {
+    final def = vm.subjectInfoDef;
+    if (!def.enabled) return const SizedBox.shrink();
+
+    final fields = [...def.fields]..sort((a, b) => a.order.compareTo(b.order));
+
+    final fieldWidgets = fields.map((f) {
+      final current = vm.subjectInfoValues.valueOf(f.key);
+      final c = _controllerFor(f.key, current);
+      final err = _subjectErrors[f.key];
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: TextField(
+          controller: c,
+          decoration: InputDecoration(
+            labelText: f.required ? '${f.title} *' : f.title,
+            errorText: err,
+            border: const OutlineInputBorder(),
+          ),
+          onChanged: (v) {
+            vm.updateSubjectInfo(f.key, v);
+            if (_subjectErrors.isNotEmpty) {
+              setState(() => _subjectErrors = _validateSubjectInfo(vm));
+            }
+          },
+        ),
+      );
+    }).toList();
+
+    Widget body;
+    if (def.columns == 2) {
+      body = LayoutBuilder(
+        builder: (context, c) {
+          final half = (c.maxWidth - 12) / 2;
+          return Wrap(
+            spacing: 12,
+            children: fieldWidgets.map((w) => SizedBox(width: half, child: w)).toList(),
+          );
+        },
+      );
+    } else {
+      body = Column(children: fieldWidgets);
+    }
+
+    return _card(
+      title: 'Subject Info',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Top controls row
+          Row(
+            children: [
+              const Text('Layout:'),
+              const SizedBox(width: 10),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 1, label: Text('1 col')),
+                  ButtonSegment(value: 2, label: Text('2 col')),
+                ],
+                selected: {def.columns},
+                onSelectionChanged: (s) => vm.setSubjectInfoColumns(s.first),
+              ),
+              const Spacer(),
+              OutlinedButton.icon(
+                onPressed: () => _addSubjectFieldDialog(context, vm),
+                icon: const Icon(Icons.add),
+                label: const Text('Add field'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () => _manageSubjectFieldsSheet(context, vm),
+                icon: const Icon(Icons.tune),
+                label: const Text('Manage'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          body,
+
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => setState(() => _subjectErrors = _validateSubjectInfo(vm)),
+              child: const Text('Validate'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ---------------- Add actions ----------------
+
   Future<void> _showAddSheet(BuildContext context, ReportEditorProvider vm) async {
-    final hasSelection = vm.selectedSectionId != null;
+    final hasSelection = vm.selectedNodeId != null;
 
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -171,29 +552,38 @@ class ReportEditorScreen extends StatelessWidget {
 
   Future<String?> _promptText(BuildContext context, String title) async {
     final c = TextEditingController();
-    return showDialog<String>(
+    final res = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
         title: Text(title),
-        content: TextField(controller: c, decoration: const InputDecoration(hintText: 'Type a name…')),
+        content: TextField(
+          controller: c,
+          decoration: const InputDecoration(hintText: 'Type a name…'),
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(context, c.text), child: const Text('Add')),
         ],
       ),
     );
+    c.dispose();
+    return res;
   }
 
   // ---------------- UI blocks ----------------
+
   Widget _card({required String title, required Widget child}) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 10),
-          child,
-        ]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 10),
+            child,
+          ],
+        ),
       ),
     );
   }
@@ -226,14 +616,23 @@ class ReportEditorScreen extends StatelessWidget {
     );
   }
 
-  Widget _sectionWidget(BuildContext context, ReportEditorProvider vm, SectionNode section, {required int depth}) {
-    final indent = depth * 16.0;
-    final selected = vm.selectedSectionId == section.id;
+  Widget _sectionWidget(
+    BuildContext context,
+    ReportEditorProvider vm,
+    SectionNode section, {
+    required int depth,
+  }) {
+    final indent = (section.indent) * 16.0;
+    final selected = vm.selectedNodeId == section.id;
     final hasChildren = section.children.isNotEmpty;
 
     final style = TextStyle(
       fontWeight: section.style.bold ? FontWeight.w800 : FontWeight.w600,
-      fontSize: section.style.level == HeadingLevel.h1 ? 18 : section.style.level == HeadingLevel.h2 ? 16 : 14,
+      fontSize: section.style.level == HeadingLevel.h1
+          ? 18
+          : section.style.level == HeadingLevel.h2
+              ? 16
+              : 14,
     );
 
     final align = switch (section.style.align) {
@@ -251,7 +650,7 @@ class ReportEditorScreen extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
-              onTap: () => vm.selectSection(section.id),
+              onTap: () => vm.selectNode(section.id),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                 child: Row(
@@ -265,7 +664,10 @@ class ReportEditorScreen extends StatelessWidget {
                       const SizedBox(width: 24),
                     const SizedBox(width: 6),
                     Expanded(
-                      child: Align(alignment: align, child: Text(section.title, style: style)),
+                      child: Align(
+                        alignment: align,
+                        child: Text(section.title, style: style),
+                      ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.more_horiz),
@@ -279,13 +681,30 @@ class ReportEditorScreen extends StatelessWidget {
           if (!section.collapsed)
             ...section.children.map((child) {
               if (child is ContentNode) {
+                final childIndent = (child.indent) * 16.0;
+                final contentSelected = vm.selectedNodeId == child.id;
+
                 return Padding(
-                  padding: EdgeInsets.only(left: indent + 26, top: 8),
-                  child: TextField(
-                    minLines: 2,
-                    maxLines: 6,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Enter text…'),
-                    onChanged: (v) => vm.updateContent(child.id, v),
+                  padding: EdgeInsets.only(left: childIndent + 26, top: 8),
+                  child: Material(
+                    color: contentSelected ? Colors.teal.shade500.withAlpha(12) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => vm.selectNode(child.id),
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: TextField(
+                          minLines: 2,
+                          maxLines: 6,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            hintText: 'Enter text…',
+                          ),
+                          onChanged: (v) => vm.updateContent(child.id, v),
+                        ),
+                      ),
+                    ),
                   ),
                 );
               }
@@ -313,6 +732,8 @@ class ReportEditorScreen extends StatelessWidget {
     }
   }
 }
+
+// ---------------- section edit sheet ----------------
 
 class _SectionEditResult {
   final String? rename;
@@ -409,6 +830,8 @@ class _SectionEditSheetState extends State<_SectionEditSheet> {
     );
   }
 }
+
+// ---------------- images manager ----------------
 
 class _ImagesManager extends StatefulWidget {
   final ReportEditorProvider vm;

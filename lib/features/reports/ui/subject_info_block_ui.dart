@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/subject_info_provider.dart';
+
+import '../providers/report_editor_provider.dart';
 
 class SubjectInfoBlock extends StatefulWidget {
   const SubjectInfoBlock({super.key});
@@ -21,68 +22,38 @@ class _SubjectInfoBlockState extends State<SubjectInfoBlock> {
     super.dispose();
   }
 
-  TextEditingController _controllerFor(String fieldId, String initial) {
-    return _controllers.putIfAbsent(
-      fieldId,
-      () => TextEditingController(text: initial),
-    );
+  TextEditingController _controllerFor(String key, String initial) {
+    return _controllers.putIfAbsent(key, () => TextEditingController(text: initial));
   }
 
-  void _syncControllers(SubjectInfoProvider p) {
-    for (final f in p.fields) {
-      final text = p.values.of(f.fieldId);
-      final c = _controllerFor(f.fieldId, text);
+  void _syncControllers(ReportEditorProvider vm) {
+    for (final f in vm.subjectInfoDef.fields) {
+      final text = vm.subjectInfoValues.valueOf(f.key);
+      final c = _controllerFor(f.key, text);
       if (c.text != text) c.text = text;
     }
   }
 
+  Map<String, String> _validate(ReportEditorProvider vm) {
+    final errors = <String, String>{};
+    if (!vm.subjectInfoDef.enabled) return errors;
+
+    for (final f in vm.subjectInfoDef.fields) {
+      if (!f.required) continue;
+      if (vm.subjectInfoValues.valueOf(f.key).trim().isEmpty) {
+        errors[f.key] = 'Required';
+      }
+    }
+    return errors;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Consumer<SubjectInfoProvider>(
-      builder: (context, p, _) {
-        _syncControllers(p);
+    return Consumer<ReportEditorProvider>(
+      builder: (context, vm, _) {
+        if (!vm.subjectInfoDef.enabled) return const SizedBox.shrink();
 
-        if (!p.enabled) return const SizedBox.shrink();
-
-        final fieldWidgets = p.fields.map((f) {
-          final controller = _controllerFor(f.fieldId, p.values.of(f.fieldId));
-          final error = _errors[f.fieldId];
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: TextField(
-              controller: controller,
-              decoration: InputDecoration(
-                labelText: f.required ? '${f.title} *' : f.title,
-                errorText: error,
-                border: const OutlineInputBorder(),
-              ),
-              onChanged: (v) {
-                p.setValue(f.fieldId, v);
-                if (_errors.isNotEmpty) {
-                  setState(() => _errors = p.validate());
-                }
-              },
-            ),
-          );
-        }).toList();
-
-        Widget body;
-        if (p.columns == 2) {
-          body = LayoutBuilder(
-            builder: (context, c) {
-              final half = (c.maxWidth - 12) / 2;
-              return Wrap(
-                spacing: 12,
-                children: fieldWidgets
-                    .map((w) => SizedBox(width: half, child: w))
-                    .toList(),
-              );
-            },
-          );
-        } else {
-          body = Column(children: fieldWidgets);
-        }
+        _syncControllers(vm);
 
         return Card(
           child: Padding(
@@ -99,13 +70,35 @@ class _SubjectInfoBlockState extends State<SubjectInfoBlock> {
                       ),
                     ),
                     TextButton(
-                      onPressed: () => setState(() => _errors = p.validate()),
+                      onPressed: () => setState(() => _errors = _validate(vm)),
                       child: const Text('Validate'),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                body,
+
+                ...vm.subjectInfoDef.fields.map((f) {
+                  final controller = _controllerFor(f.key, vm.subjectInfoValues.valueOf(f.key));
+                  final error = _errors[f.key];
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: TextField(
+                      controller: controller,
+                      decoration: InputDecoration(
+                        labelText: f.required ? '${f.title} *' : f.title,
+                        errorText: error,
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (v) {
+                        vm.updateSubjectInfo(f.key, v);
+                        if (_errors.isNotEmpty) {
+                          setState(() => _errors = _validate(vm));
+                        }
+                      },
+                    ),
+                  );
+                }).toList(),
               ],
             ),
           ),
