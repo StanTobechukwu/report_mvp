@@ -1,5 +1,6 @@
 import '../models/nodes.dart';
 import '../models/template_doc.dart';
+import '../models/subject_info_def.dart';
 
 class TemplateCodec {
   static Map<String, dynamic> templateToJson(TemplateDoc t) => {
@@ -7,20 +8,24 @@ class TemplateCodec {
         'updatedAtIso': t.updatedAt.toIso8601String(),
         'name': t.name,
         'roots': t.roots.map(_sectionToJson).toList(),
+        'subjectInfo': t.subjectInfo.toJson(),
       };
 
   static TemplateDoc templateFromJson(Map<String, dynamic> j) {
     return TemplateDoc(
       templateId: (j['templateId'] as String?) ?? 'unknown',
-      updatedAt: DateTime.tryParse((j['updatedAtIso'] as String?) ?? '') ?? DateTime.now(),
+      updatedAt: DateTime.tryParse((j['updatedAtIso'] as String?) ?? '') ??
+          DateTime.now(),
       name: (j['name'] as String?) ?? 'Untitled Template',
       roots: ((j['roots'] as List?) ?? const [])
           .map((e) => _sectionFromJson(e as Map<String, dynamic>))
           .toList(),
+      subjectInfo:
+          SubjectInfoBlockDef.fromJson(j['subjectInfo'] as Map<String, dynamic>?),
     );
   }
 
-  // ---------- SectionNode / Node ----------
+  // ----- existing node helpers unchanged -----
   static Map<String, dynamic> _sectionToJson(SectionNode s) => {
         'type': 'section',
         'id': s.id,
@@ -34,7 +39,7 @@ class TemplateCodec {
         id: (j['id'] as String?) ?? '',
         title: (j['title'] as String?) ?? '',
         collapsed: (j['collapsed'] as bool?) ?? false,
-        style: _styleFromJson((j['style'] as Map?)?.cast<String, dynamic>() ?? const {}),
+        style: _styleFromJson((j['style'] as Map?)?.cast<String, dynamic>() ?? {}),
         children: ((j['children'] as List?) ?? const [])
             .map((e) => _nodeFromJson(e as Map<String, dynamic>))
             .toList(),
@@ -43,11 +48,7 @@ class TemplateCodec {
   static Map<String, dynamic> _nodeToJson(Node n) {
     if (n is SectionNode) return _sectionToJson(n);
     if (n is ContentNode) {
-      return {
-        'type': 'content',
-        'id': n.id,
-        'text': n.text,
-      };
+      return {'type': 'content', 'id': n.id, 'text': n.text};
     }
     throw StateError('Unknown node type');
   }
@@ -64,7 +65,6 @@ class TemplateCodec {
     throw StateError('Unknown node json type: $type');
   }
 
-  // ---------- TitleStyle ----------
   static Map<String, dynamic> _styleToJson(TitleStyle s) => {
         'level': s.level.name,
         'bold': s.bold,
@@ -72,13 +72,12 @@ class TemplateCodec {
       };
 
   static TitleStyle _styleFromJson(Map<String, dynamic> j) {
-    final levelName = (j['level'] as String?) ?? HeadingLevel.h2.name;
-    final alignName = (j['align'] as String?) ?? TitleAlign.left.name;
-
     return TitleStyle(
-      level: HeadingLevel.values.byName(levelName),
+      level: HeadingLevel.values.byName(
+          (j['level'] as String?) ?? HeadingLevel.h2.name),
       bold: (j['bold'] as bool?) ?? true,
-      align: TitleAlign.values.byName(alignName),
+      align: TitleAlign.values.byName(
+          (j['align'] as String?) ?? TitleAlign.left.name),
     );
   }
 }

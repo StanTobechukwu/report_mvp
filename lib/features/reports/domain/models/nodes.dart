@@ -1,7 +1,13 @@
 import 'package:flutter/foundation.dart';
 
+@immutable
+sealed class Node {
+  final String id;
+  const Node({required this.id});
+}
+
+enum HeadingLevel { h1, h2, h3, h4 }
 enum TitleAlign { left, center, right }
-enum HeadingLevel { h1, h2, h3 }
 
 @immutable
 class TitleStyle {
@@ -15,18 +21,17 @@ class TitleStyle {
     this.align = TitleAlign.left,
   });
 
-  TitleStyle copyWith({HeadingLevel? level, bool? bold, TitleAlign? align}) {
+  TitleStyle copyWith({
+    HeadingLevel? level,
+    bool? bold,
+    TitleAlign? align,
+  }) {
     return TitleStyle(
       level: level ?? this.level,
       bold: bold ?? this.bold,
       align: align ?? this.align,
     );
   }
-}
-
-sealed class Node {
-  final String id;
-  const Node({required this.id});
 }
 
 @immutable
@@ -36,12 +41,16 @@ class SectionNode extends Node {
   final TitleStyle style;
   final List<Node> children;
 
+  /// ✅ indentation level for this section (0,1,2...)
+  final int indent;
+
   const SectionNode({
     required super.id,
     required this.title,
     this.collapsed = false,
     this.style = const TitleStyle(),
     this.children = const [],
+    this.indent = 0,
   });
 
   SectionNode copyWith({
@@ -49,6 +58,7 @@ class SectionNode extends Node {
     bool? collapsed,
     TitleStyle? style,
     List<Node>? children,
+    int? indent,
   }) {
     return SectionNode(
       id: id,
@@ -56,6 +66,7 @@ class SectionNode extends Node {
       collapsed: collapsed ?? this.collapsed,
       style: style ?? this.style,
       children: children ?? this.children,
+      indent: indent ?? this.indent,
     );
   }
 }
@@ -63,7 +74,24 @@ class SectionNode extends Node {
 @immutable
 class ContentNode extends Node {
   final String text;
-  const ContentNode({required super.id, this.text = ''});
 
-  ContentNode copyWith({String? text}) => ContentNode(id: id, text: text ?? this.text);
+  /// ✅ indentation level for this paragraph/content node
+  final int indent;
+
+  const ContentNode({
+    required super.id,
+    this.text = '',
+    this.indent = 0,
+  });
+
+  ContentNode copyWith({
+    String? text,
+    int? indent,
+  }) {
+    return ContentNode(
+      id: id,
+      text: text ?? this.text,
+      indent: indent ?? this.indent,
+    );
+  }
 }

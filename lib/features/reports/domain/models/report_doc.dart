@@ -1,9 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'nodes.dart';
+import 'subject_info_value.dart';
 
 enum ImagePlacementChoice {
-  attachmentsOnly, // max 8
-  inlinePage1,     // max 12 (4 inline + up to 8 attachments)
+  attachmentsOnly,
+  inlinePage1,
 }
 
 @immutable
@@ -11,14 +12,6 @@ class ImageAttachment {
   final String id;
   final String filePath;
   const ImageAttachment({required this.id, required this.filePath});
-}
-
-@immutable
-class RecommendationBlock {
-  final String text;
-  const RecommendationBlock({this.text = ''});
-
-  RecommendationBlock copyWith({String? text}) => RecommendationBlock(text: text ?? this.text);
 }
 
 @immutable
@@ -33,7 +26,11 @@ class SignatureBlock {
     this.signatureFilePath,
   });
 
-  SignatureBlock copyWith({String? name, String? credentials, String? signatureFilePath}) {
+  SignatureBlock copyWith({
+    String? name,
+    String? credentials,
+    String? signatureFilePath,
+  }) {
     return SignatureBlock(
       name: name ?? this.name,
       credentials: credentials ?? this.credentials,
@@ -44,16 +41,17 @@ class SignatureBlock {
 
 @immutable
 class ReportDoc {
-  final String reportId;       // storage id
-  final String createdAtIso;   // storage metadata
-  final String updatedAtIso;   // storage metadata
+  final String reportId;
+  final String createdAtIso;
+  final String updatedAtIso;
 
   final List<SectionNode> roots;
   final List<ImageAttachment> images;
   final ImagePlacementChoice placementChoice;
-
-  final RecommendationBlock recommendation;
   final SignatureBlock signature;
+
+  /// Subject Info VALUES ONLY (exception: not part of node tree)
+  final SubjectInfoValues subjectInfo;
 
   const ReportDoc({
     required this.reportId,
@@ -62,31 +60,31 @@ class ReportDoc {
     this.roots = const [],
     this.images = const [],
     this.placementChoice = ImagePlacementChoice.attachmentsOnly,
-    this.recommendation = const RecommendationBlock(),
     this.signature = const SignatureBlock(),
-  });
+    SubjectInfoValues? subjectInfo,
+  }) : subjectInfo = subjectInfo ?? const SubjectInfoValues({});
 
-  int get maxImages => placementChoice == ImagePlacementChoice.inlinePage1 ? 12 : 8;
+  int get maxImages =>
+      placementChoice == ImagePlacementChoice.inlinePage1 ? 12 : 8;
 
   ReportDoc copyWith({
-    String? reportId,
     String? createdAtIso,
     String? updatedAtIso,
     List<SectionNode>? roots,
     List<ImageAttachment>? images,
     ImagePlacementChoice? placementChoice,
-    RecommendationBlock? recommendation,
     SignatureBlock? signature,
+    SubjectInfoValues? subjectInfo,
   }) {
     return ReportDoc(
-      reportId: reportId ?? this.reportId,
+      reportId: reportId,
       createdAtIso: createdAtIso ?? this.createdAtIso,
       updatedAtIso: updatedAtIso ?? this.updatedAtIso,
       roots: roots ?? this.roots,
       images: images ?? this.images,
       placementChoice: placementChoice ?? this.placementChoice,
-      recommendation: recommendation ?? this.recommendation,
       signature: signature ?? this.signature,
+      subjectInfo: subjectInfo ?? this.subjectInfo,
     );
   }
 }
